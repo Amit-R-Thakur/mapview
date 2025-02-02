@@ -1,0 +1,220 @@
+.r-map {
+  height: 100%;
+  width: 100%;
+}
+
+.drawing-manager {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background-color: #fff;
+}
+
+.drawing-manager-icon {
+  background-color: #fff;
+  color: black;
+  border: none;
+  padding: 5px;
+  margin: 1px;
+  border-radius: 50%;
+}
+
+/* Hover effect */
+.drawing-manager-icon:hover {
+  background-color: #e0e0e0;
+}
+
+/* Pressed button effect */
+.drawing-manager-icon:active {
+  background-color: #d0d0d0; /* Lighter color on press */
+  transform: scale(0.5); /* Slightly shrink the button */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* Reduce shadow when pressed */
+}
+
+.tracking-manager {
+  position: absolute;
+  bottom: 5px;
+  left: 5px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background-color: #fff;
+}
+
+/* .navigation-param {
+  position: absolute;
+  top: 5px;
+  left: 10%;
+  right: 10%;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-evenly;
+  align-items: center;
+  background-color: #fff;
+  color: #000;
+  padding-top: 10px;
+} */
+
+.navigation-param {
+  position: absolute;
+  top: 5px;
+  left: 10%;
+  right: 10%;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-evenly;
+  align-items: center;
+  background-color: #fff;
+  color: #000;
+  padding-top: 10px;
+
+  transition: background 0.3s ease-in-out;
+}
+
+.navigation-param h4,
+.navigation-param p {
+  font-size: 16px;
+  margin: 0;
+  animation: fadeInText 1s ease-in-out;
+}
+
+.color-change {
+  animation: colorChange 1s ease-out, glowText 1s ease-out;
+}
+
+/* Colorful gradient animation for background */
+@keyframes colorChange {
+  0% {
+    color: #ff6b6b; /* Red */
+  }
+  25% {
+    color: #ffcc00; /* Yellow */
+  }
+  50% {
+    color: #6bff6b; /* Green */
+  }
+  75% {
+    color: #4e92ff; /* Blue */
+  }
+  100% {
+    color: #ff6b6b; /* Red */
+  }
+}
+
+/* Text glow effect */
+@keyframes glowText {
+  0% {
+    text-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+  }
+  25% {
+    text-shadow: 0 0 10px rgba(255, 255, 0, 0.8);
+  }
+  50% {
+    text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+  }
+  75% {
+    text-shadow: 0 0 10px rgba(0, 0, 255, 0.8);
+  }
+  100% {
+    text-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+  }
+}
+
+/* Fade-in effect with slight slide-up animation for text */
+@keyframes fadeInText {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.drawing-manager-icon {
+  position: relative;
+  display: inline-block;
+  padding: 10px;
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 24px; /* Icon size */
+}
+
+.drawing-manager-icon .hover-text {
+  display: none; /* Hide the text by default */
+  position: absolute;
+  bottom: -25px; /* Position the text below the button */
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #333;
+  color: #fff;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 14px;
+  white-space: nowrap; /* Prevent text from wrapping */
+}
+
+.drawing-manager-icon:hover .hover-text {
+  display: block; /* Show the text when the button is hovered */
+}
+
+/* Auth.tsx */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+input::placeholder {
+  color: white; /* White placeholder text */
+  opacity: 0.7; /* Optional opacity for a subtle effect */
+}
+
+.animated-input {
+  transition: all 0.3s ease-in-out; /* Smooth transition for all properties */
+}
+
+.animated-input:hover {
+  background-color: #333; /* Darker gray on hover */
+}
+
+.animated-input:focus {
+  background-color: #007bff; /* Change to blue when focused */
+  border-color: #0056b3; /* Change border color */
+  box-shadow: 0px 0px 5px rgba(0, 123, 255, 0.5); /* Add a glowing effect */
+  color: white; /* Ensure text remains white */
+}
+
+.animated-input::placeholder {
+  color: rgba(255, 255, 255, 0.7); /* Placeholder color */
+  transition: color 0.3s ease-in-out; /* Smooth transition for placeholder */
+}
+
+.animated-input:hover::placeholder {
+  color: rgba(200, 200, 200, 0.8); /* Slightly lighter placeholder on hover */
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.drawing-manager-icon.active {
+  background-color: black; /* You can customize this color #007bff */
+  color: white; /* Change text color when active */
+}

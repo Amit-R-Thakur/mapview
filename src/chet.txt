@@ -1,0 +1,634 @@
+
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { fromLonLat, toLonLat } from "ol/proj";
+import GeoJSON from "ol/format/GeoJSON";
+import { Point, Circle as OL_Circle } from "ol/geom";
+import {
+  RInteraction,
+  RLayerVector,
+  RLayerVectorTile,
+  RMap,
+  RStyle,
+  RFeature,
+  ROverlay,
+  RPopup,
+} from "rlayers";
+import "ol/ol.css";
+import { altShiftKeysOnly, shiftKeyOnly } from "ol/events/condition";
+import { bearing, distance } from "@turf/turf";
+import { MVT } from "ol/format";
+import { Fill, Stroke, Style, Text } from "ol/style"; // Import Text
+// for displaying unit_name
+import proj4 from "proj4";
+// import locationIcon from "../../public/assets/location.png";
+// import aircraft from "../../public/assets/aircraft.png";
+// import Submarine from "../../public/assets/submarine.png";
+import CircleForm from "./CicleForm";
+
+import ShapeSelectForm from "./ShapeSelectForm"; // Import the modal component
+
+const center = fromLonLat([72.36, 18.65]);
+let format = new MVT();
+
+// Define the UTM projection
+const utmProjection = "+proj=utm +zone=33 +datum=WGS84";
+const wgs84Projection = "+proj=longlat +datum=WGS84 +no_defs";
+
+// Define types for the props
+interface MapComProps {
+  setCordinate: (coordinates: any) => void;
+  setForm: (status: boolean) => void;
+  setRootForm: (status: boolean) => void;
+  setCircleForm: (status: boolean) => void;
+}
+
+interface Location {
+  lat: number;
+  lng: number;
+}
+
+interface Data {
+  location: Location;
+  bearing: number;
+  range: number;
+  time: string;
+}
+
+interface WebSocketData {
+  unit_name: string;
+  latitude: number;
+  longitude: number;
+}
+
+const MapCom: React.FC<MapComProps> = ({
+  setCordinate,
+  setForm,
+  setRootForm,
+  setCircleForm,
+}) => {
+  const layerRef = useRef<any>(null);
+  const newRef = useRef<any>(null);
+
+  const [visible, setVisible] = useState<boolean>(false);
+  const [loc, setLoc] = useState<[number, number] | null>(null);
+  const [type, setType] = useState<string | null>(null);
+  const [showPin, setShowPin] = useState<boolean>(false);
+  const [pinLocation, setPinLocation] = useState<[number, number] | null>(null);
+  const [data, setData] = useState<Data>({
+    location: { lat: 0, lng: 0 },
+    bearing: 0,
+    range: 0,
+    time: new Date().toLocaleDateString(),
+  });
+  const [isDataChanging, setIsDataChanging] = useState<boolean>(false);
+
+  const [showForm, setShowForm] = useState<boolean>(false);
+  const [shape, setShape] = useState<any>([]);
+  const [unitNames, setUnitNames] = useState<Map<string, [number, number]>>(
+    new Map()
+  );
+  const [markers, setMarkers] = useState<any>([]);
+
+  const [zoomLevel, setZoomLevel] = useState<number>(5); // State for zoom level
+  const [circleData, setCircleData] = useState<any>(null); // State
+  // for storing circle data (latitude, longitude, radius)
+
+  // New state to track whether a shape has been drawn
+  const [isShapeSelected, setIsShapeSelected] = useState<boolean>(false); // New state to track if a shape is selected
+
+  const [showMarker, setShowMarker] = useState<boolean>(false); //
+  // State to track marker visibility
+
+  const [features, setFeatures] = useState<any[]>([]); // To store
+  // drawn features
+  const [selectedFeature, setSelectedFeature] = useState<any>(null);
+  // To track the selected feature
+
+  useEffect(() => {
+    console.log(shape);
+  }, [shape]);
+
+  const styles = useMemo(() => {
+    return new Style({
+      fill: new Fill({
+        color: "rgba(245,232,39,0.8)",
+      }),
+      stroke: new Stroke({ color: "#000000", width: 0.5 }),
+    });
+  }, []);
+
+  // WebSocket Connection and Handling
+  useEffect(() => {
+    const socket = new WebSocket("ws://192.168.0.200:5015");
+
+    socket.onopen = () => {
+      console.log("WebSocket connected");
+      socket.send(JSON.stringify({ type: "targets" }));
+    };
+
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      // console.log("message received", message);
+      setMarkers((prevUnits: any) => {
+        // Check if the target_id already exists
+        const existingUnitIndex = prevUnits.findIndex(
+          (item: any) => item.target_id === message.target_id
+        );
+
+        if (existingUnitIndex !== -1) {
+          // If the unit exists, replace it
+          const updatedUnits = [...prevUnits];
+          updatedUnits[existingUnitIndex] = message; // Replace the
+          // unit at the found index
+          return updatedUnits;
+        } else {
+          // If it doesn't exist, add it to the array
+          return [...prevUnits, message];
+        }
+      });
+    };
+
+    socket.onclose = () => {
+      console.log("WebSocket connection closed");
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    // console.log("markers", markers);
+  }, [markers]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setData((prev) => ({ ...prev, time: new Date().toLocaleTimeString() }));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const onRouteClick = () => {
+    setType("Route");
+    setVisible(true);
+    setIsShapeSelected(true);
+  };
+
+  const onPolyonClick = () => {
+    setType("Polygon");
+    setVisible(true);
+    setIsShapeSelected(true);
+  };
+
+  const onCircleClick = () => {
+    setType("Circle");
+    setVisible(true);
+    setIsShapeSelected(true);
+  };
+
+  const handleFeatureClick = (feature: any) => {
+    setSelectedFeature(feature); // Set clicked feature as selected
+  };
+
+  const deleteFeature = () => {
+    if (!selectedFeature) return;
+
+    const geometry = selectedFeature.getGeometry();
+
+    // Remove from features state
+    setFeatures((prevFeatures) =>
+      prevFeatures.filter((feature) => feature !== selectedFeature)
+    );
+
+    // Remove from markers state and extract new coordinates
+    const newMarkers = markers.filter((marker: any) => {
+      if (geometry instanceof OL_Circle) {
+        const center = geometry.getCenter();
+        const [longitude, latitude] = toLonLat(center);
+
+        return !(
+          marker.type === "circle" &&
+          Math.abs(marker.longitude - longitude) < 1e-6 &&
+          Math.abs(marker.latitude - latitude) < 1e-6 &&
+          Math.abs(marker.radius - geometry.getRadius()) < 1e-6
+        );
+      } else {
+        const coords = geometry
+          .getCoordinates()[0]
+          .map((coord: any) => toLonLat(coord));
+
+        return !(
+          marker.type === "polygon" &&
+          areCoordinatesEqual(marker.coordinates, coords)
+        );
+      }
+    });
+
+    // Update markers state
+    setMarkers(newMarkers);
+
+    // Extract new coordinates from the remaining markers
+    const newCoordinates = newMarkers.map((marker: any) => {
+      if (marker.type === "circle") {
+        return {
+          type: "circle",
+          center: [marker.longitude, marker.latitude],
+          radius: marker.radius,
+        };
+      } else if (marker.type === "polygon") {
+        return {
+          type: "polygon",
+          coordinates: marker.coordinates,
+        };
+      }
+    });
+
+    const source = layerRef.current.source; // Replace featuresLayer
+    // with the actual reference to your RLayerVector
+    if (source) {
+      source.removeFeature(selectedFeature); // Remove the feature
+      // from the source
+    }
+    const newsource = newRef.current.source; // Replace
+    // featuresLayer with the actual reference to your RLayerVector
+    if (newsource) {
+      newsource.removeFeature(selectedFeature); // Remove the feature
+      // from the source
+    }
+
+    // Update setCordinate with the filtered coordinates
+    setCordinate(newCoordinates);
+
+    setSelectedFeature(null); // Clear selection
+  };
+
+  // Helper function to compare polygon coordinates
+  const areCoordinatesEqual = (coords1: any[], coords2: any[]): boolean => {
+    if (coords1.length !== coords2.length) return false;
+
+    return coords1.every((coord1, index) => {
+      const coord2 = coords2[index];
+      return (
+        Math.abs(coord1[0] - coord2[0]) < 1e-6 && // Longitude comparison
+        Math.abs(coord1[1] - coord2[1]) < 1e-6 // Latitude comparison
+      );
+    });
+  };
+
+  const onDrawEnd = async (event: any) => {
+    const geojson = new GeoJSON();
+    const feature = event.feature;
+    let geoJson = geojson.writeFeatureObject(feature);
+    console.log("geoJson", geoJson);
+    setFeatures((prevFeatures) => [...prevFeatures, feature]);
+    setCordinate(geoJson);
+
+    // type === "Polygon" ? setForm(true) : setRootForm(true);
+
+    if (type === "Polygon") {
+      setForm(true);
+    } else if (type === "Route") {
+      setRootForm(true);
+    }
+
+    // Check if the drawn geometry is a Circle
+    const geometry = feature.getGeometry();
+
+    if (geometry instanceof OL_Circle) {
+      const center = geometry.getCenter(); // Get center of the circle
+      const radius = geometry.getRadius(); // Get the radius of the circle
+
+      // Convert center from projected coordinates to geographic
+      // (latitude, longitude)
+      const [longitude, latitude] = toLonLat(center);
+      console.log(
+        `Circle drawn at Lat: ${latitude}, Lng: ${longitude}, Radius: ${radius}`
+      );
+
+      setCircleData({
+        latitude: latitude.toFixed(6),
+        longitude: longitude.toFixed(6),
+        radius: radius.toFixed(2),
+      });
+    } else {
+      console.log("The drawn feature is not a Circle.");
+    }
+  };
+
+  const onPointerMove = (e: any) => {
+    const { map } = e;
+    const [mapLng, mapLat] = map.getCoordinateFromPixel(e.pixel);
+
+    // Convert to WGS84 coordinates
+    const [longitude, latitude] = toLonLat([mapLng, mapLat]);
+
+    // Update state with converted coordinates
+    if (isShapeSelected && longitude && latitude) {
+      setData((prev) => ({
+        ...prev,
+        location: { lat: latitude, lng: longitude },
+        range: loc
+          ? distance([longitude, latitude], loc, {
+              units: "nauticalmiles",
+            })
+          : 0,
+        // bearing: loc ? (bearing([longitude, latitude], loc) + 180) % 360 : 0,
+        bearing: loc ? bearing([longitude, latitude], loc) : 0,
+      }));
+
+      if (!loc) {
+        setLoc([longitude, latitude]);
+      }
+    } else {
+      setData((prev) => ({
+        ...prev,
+        location: { lat: latitude, lng: longitude },
+      }));
+    }
+  };
+
+  const onMapClick = (e: any) => {
+    // if (!showPin) return;
+    //   // if (!showPin || !isShapeSelected) return; // Only update
+    // bearing and range if a shape is selected
+    // if (!isShapeSelected) return; // Only update bearing and range
+    // if a shape is selected
+
+    const { map } = e;
+    const clickedCoords = map.getCoordinateFromPixel(e.pixel);
+    const [longitude, latitude] = toLonLat(clickedCoords);
+    setPinLocation([longitude, latitude]);
+
+    if (loc) {
+      const newRange = distance([longitude, latitude], loc, {
+        units: "nauticalmiles",
+      });
+      // const newBearing = (bearing([longitude, latitude], loc) + 180) % 360;
+      const newBearing = bearing([longitude, latitude], loc);
+
+      setData((prev) => ({
+        ...prev,
+        location: { lat: latitude, lng: longitude }, // Update location
+        range: newRange, // Update range
+        bearing: newBearing, // Update bearing
+      }));
+    } else {
+      // If loc is null, initialize it to the first clicked point
+      setLoc([longitude, latitude]);
+    }
+  };
+
+  const handleShowForm = () => {
+    setShowForm(true); // Open the form modal
+  };
+
+  const handleCloseForm = () => {
+    setShowForm(false); // Close the form modal
+  };
+
+  const handleFormSubmit = (shapeType: string, name: string) => {
+    console.log("Shape Type: ", shapeType);
+    console.log("Name: ", name);
+  };
+
+  const aircraftH = 48,
+    aircraftW = 48,
+    submarineH = 48,
+    submarineW = 28;
+
+  return (
+    <>
+      <RMap
+        width={"100%"}
+        height={"100vh"}
+        className="r-map"
+        onPointerMove={onPointerMove}
+        onClick={onMapClick}
+        initial={{ center: center, zoom: 5 }}
+      >
+        <div className="drawing-manager">
+          <button
+            onClick={onRouteClick}
+            className="drawing-manager-icon"
+            aria-label="Circle Shape"
+          >
+            <i className="bi bi-slash" />
+            <span className="hover-text">Route</span>
+          </button>
+
+          <button
+            onClick={onPolyonClick}
+            className="drawing-manager-icon"
+            aria-label="Polygon Shape"
+          >
+            <i className="bi bi-pentagon" />
+            <span className="hover-text">Polygon</span>
+          </button>
+
+          <button
+            onClick={onCircleClick}
+            className="drawing-manager-icon"
+            aria-label="Circle Shape"
+          >
+            <i className="bi bi-circle"></i>
+            <span className="hover-text">Circle</span>
+          </button>
+
+          <button
+            className="drawing-manager-icon"
+            aria-label="Pin Marker"
+            onClick={() => {
+              // setShowPin((prev) => !prev);
+              setShowMarker((prev) => !prev);
+            }}
+          >
+            <i className="bi bi-binoculars" />
+            <span className="hover-text">Marker</span>
+          </button>
+        </div>
+
+        <div className="tracking-manager">
+          <button
+            onClick={handleShowForm} // Trigger modal on click
+            className="drawing-manager-icon"
+            aria-label="Shape Select"
+          >
+            <i className="bi bi-heptagon" />
+            <span className="hover-text">Heptagon</span>
+          </button>
+        </div>
+
+        {/* <div className="navigation-param">
+          <h4 className={isDataChanging ? "color-change" : ""}>
+            {Latitude: ${data.location.lat?.toFixed(2)}}
+          </h4>
+          <p>|</p>
+          <h4 className={isDataChanging ? "color-change" : ""}>
+            {Longitude: ${data.location.lng?.toFixed(2)}}
+          </h4>
+          <p>|</p>
+          <h4 className={isDataChanging ? "color-change" : ""}>
+            {Bearing: ${data.bearing?.toFixed(2)}}
+          </h4>
+          <p>|</p>
+          <h4 className={isDataChanging ? "color-change" : ""}>
+            {Range: ${data.range?.toFixed(2)}}
+          </h4>
+          <p>|</p>
+          <h4>{Date: ${data.time}}</h4>
+        </div> */}
+
+        <RLayerVectorTile
+          url={`${window.location}coasttile/{z}/{x}/{y}.pbf`}
+          format={format}
+          style={styles}
+        />
+
+        {visible && (
+          <RLayerVector zIndex={1}>
+            <RStyle.RStyle>
+              <RStyle.RStroke color="#859F3D" width={2} />
+              <RStyle.RFill color="#C4E1F6" />
+            </RStyle.RStyle>
+
+            <RInteraction.RDraw
+              type="Polygon"
+              condition={shiftKeyOnly}
+              freehandCondition={altShiftKeysOnly}
+              onDrawEnd={onDrawEnd}
+            />
+          </RLayerVector>
+        )}
+
+        {/* Circle */}
+        {visible && type === "Circle" && (
+          <RLayerVector zIndex={1} ref={newRef}>
+            <RStyle.RStyle>
+              <RStyle.RStroke color="#859F3D" width={2} />
+              <RStyle.RFill color="#C4E1F6" />
+            </RStyle.RStyle>
+
+            <RInteraction.RDraw
+              type="Circle"
+              condition={shiftKeyOnly}
+              freehandCondition={altShiftKeysOnly}
+              onDrawEnd={onDrawEnd}
+            />
+          </RLayerVector>
+        )}
+
+        <RLayerVector ref={layerRef}>
+          {/* {showMarker && pinLocation && ( */}
+          {features.map((feature, index) => (
+            <RFeature
+              geometry={feature.getGeometry()}
+              onClick={() => handleFeatureClick(feature)}
+            >
+              <RStyle.RStyle>
+                <RStyle.RStroke color="#000000" width={1} />
+                <RStyle.RFill color="rgba(255, 0, 0, 0.2)" />
+              </RStyle.RStyle>
+              {selectedFeature && (
+                <RPopup
+                  trigger="click"
+                  position={selectedFeature.getGeometry().getFirstCoordinate()}
+                >
+                  <div
+                    style={{
+                      backgroundColor: "white",
+                      padding: "10px",
+                      borderRadius: "5px",
+                      boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
+                    }}
+                  >
+                    <p>Do you want to delete this feature?</p>
+                    <div onClick={() => deleteFeature()}>Delete</div>
+                  </div>
+                </RPopup>
+              )}
+            </RFeature>
+          ))}
+          {/* )} */}
+        </RLayerVector>
+
+        {/* Render the unit names */}
+        <RLayerVector>
+          {markers?.map((marker: any) => (
+            <RFeature
+              key={marker.target_id}
+              geometry={
+                new Point(fromLonLat([marker.longitude, marker.latitude]))
+              }
+            >
+              {/* Ensure ROverlay is a child of RFeature */}
+              <ROverlay>
+                <img
+                  src={marker?.unit_name === "Submarine" ? Submarine : aircraft}
+                  style={{
+                    position: "relative",
+                    top: -aircraftH / 2,
+                    left: -aircraftW / 2,
+                    userSelect: "none",
+                    pointerEvents: "none",
+                  }}
+                  width={
+                    marker.unit_name === "Submarine" ? submarineW : aircraftW
+                  }
+                  height={
+                    marker.unit_name === "Submarine" ? submarineH : aircraftH
+                  }
+                  alt="Marker"
+                />
+              </ROverlay>
+
+              {/* Popup for hover */}
+              <RPopup trigger="hover">
+                <div
+                  style={{
+                    backgroundColor: "black",
+                    padding: "20px",
+                    borderRadius: "10px",
+                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+                    width: "200px",
+                    fontSize: "12px",
+                    color: "white",
+                    textAlign: "left",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                    justifyContent: "center",
+                  }}
+                >
+                  <p>Unit name: {marker?.unit_name}</p>
+                  <p>Subtype: {marker?.subtype}</p>
+                  <p>Speed: {marker?.speed}</p>
+                  <p>Course: {marker?.course}</p>
+                  <p>Latitude: {marker?.latitude.toFixed(2)}</p>
+                  <p>Longitude: {marker?.longitude.toFixed(2)}</p>
+                </div>
+              </RPopup>
+            </RFeature>
+          ))}
+        </RLayerVector>
+      </RMap>
+
+      {/* Modal Component */}
+      <ShapeSelectForm
+        showForm={showForm}
+        handleClose={handleCloseForm}
+        handleSubmit={handleFormSubmit}
+        setShape={setShape}
+      />
+
+      {circleData && (
+        <CircleForm
+          cordinate={circleData}
+          // polygonId={undefined} // You can pass a polygonId if required
+        />
+      )}
+    </>
+  );
+};
+
+export default MapCom;
