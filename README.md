@@ -1,4 +1,4 @@
-# This code is not written by me; I just resolve someone's bugs :)
+# This code is not written by me; I've just resolved someone's bugs :)
 
 # React + TypeScript + Vite
 
